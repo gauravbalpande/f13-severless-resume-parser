@@ -88,12 +88,6 @@ Resources:
             TableName: !Ref JobsTable
         - S3ReadPolicy:
             BucketName: !Ref ResumeBucket
-        - Statement:
-            Effect: Allow
-            Action:
-              - textract:AnalyzeDocument
-              - textract:DetectDocumentText
-            Resource: "*"
 
   ApiFunction:
     Type: AWS::Serverless::Function

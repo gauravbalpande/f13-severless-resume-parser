@@ -101,12 +101,6 @@ Resources:
       - S3ReadPolicy:
           BucketName:
             Ref: ResumeBucket
-      - Statement:
-          Effect: Allow
-          Action:
-          - textract:AnalyzeDocument
-          - textract:DetectDocumentText
-          Resource: '*'
     Metadata:
       SamResourceId: ResumeProcessorFunction
   ApiFunction:

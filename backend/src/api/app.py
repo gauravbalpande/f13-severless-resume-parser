@@ -1,9 +1,9 @@
 import json
 import os
 import uuid
+from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")
 
@@ -12,6 +12,15 @@ JOB_TABLE_NAME = os.getenv("JOB_TABLE_NAME", "")
 
 candidate_table = dynamodb.Table(CANDIDATE_TABLE_NAME) if CANDIDATE_TABLE_NAME else None
 job_table = dynamodb.Table(JOB_TABLE_NAME) if JOB_TABLE_NAME else None
+
+
+def _decimal_default(obj):
+    """Make DynamoDB Decimal values JSON-serializable."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 
 
 def lambda_handler(event, context):
@@ -40,34 +49,17 @@ def lambda_handler(event, context):
                 body = _parse_body(event.get("body"))
                 return create_job(body)
 
-        # if path.startswith("/candidates"):
-        #     candidate_id = path_params.get("proxy") or path_params.get("id")
-        #     # /candidates
-        #     if not candidate_id and http_method == "GET":
-        #         return list_candidates()
-        if path == "/candidates" and http_method == "GET":
-            return list_candidates()
-
-        if path.startswith("/candidates/"):
-            candidate_id = path.split("/")[2]
-
-            if http_method == "GET":
-                if len(path.split("/")) == 3:
-                    return get_candidate(candidate_id)
-                elif path.endswith("/report"):
-                    return get_candidate_report(candidate_id)
-
-            # /candidates/{id} or /candidates/{id}/report
-            if candidate_id:
-                # Normalize: candidates/<id>/report etc.
-                parts = candidate_id.split("/")
-                if len(parts) == 1:
-                    # /candidates/{id}
-                    if http_method == "GET":
-                        return get_candidate(parts[0])
-                elif len(parts) == 2 and parts[1] == "report":
-                    if http_method == "GET":
-                        return get_candidate_report(parts[0])
+        if http_method == "GET":
+            parts = [p for p in path.split("/") if p]
+            if parts and parts[-1] == "candidates" and len(parts) <= 2:
+                return list_candidates()
+            if "candidates" in parts and http_method == "GET":
+                idx = parts.index("candidates")
+                rest = parts[idx + 1:]
+                if len(rest) == 1:
+                    return get_candidate(rest[0])
+                if len(rest) == 2 and rest[1] == "report":
+                    return get_candidate_report(rest[0])
 
         return _response(404, {"message": "Not found"})
     except Exception as exc:  # pylint: disable=broad-except
@@ -140,12 +132,13 @@ def get_candidate_report(candidate_id: str):
     if not item:
         return _response(404, {"message": "Candidate not found"})
 
-    body = json.dumps(item, indent=2)
+    body = json.dumps(item, indent=2, default=_decimal_default)
     return {
         "statusCode": 200,
         "headers": {
             "Content-Type": "application/json",
             "Content-Disposition": f'attachment; filename="candidate-{candidate_id}.json"',
+            "Access-Control-Allow-Origin": "*",
         },
         "body": body,
     }
@@ -170,6 +163,5 @@ def _response(status_code, body):
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
         },
-        "body": json.dumps(body),
+        "body": json.dumps(body, default=_decimal_default),
     }
-

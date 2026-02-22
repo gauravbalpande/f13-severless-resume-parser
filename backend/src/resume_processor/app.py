@@ -1,14 +1,14 @@
 import json
-import math
 import os
 import re
 import uuid
-from collections import Counter
+from decimal import Decimal
 from typing import Dict, List, Tuple
 
 import boto3
+from pypdf import PdfReader
 
-textract = boto3.client("textract")
+s3 = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
 
 RESUME_BUCKET_NAME = os.getenv("RESUME_BUCKET_NAME", "")
@@ -52,7 +52,7 @@ SKILL_KEYWORDS = {
 
 def lambda_handler(event, context):
     """
-    SQS event → download resume from S3 → Textract → parse → match → store.
+    SQS event → download resume from S3 → extract text (pypdf) → parse → match → store.
 
     Event (simplified):
     {
@@ -74,7 +74,9 @@ def lambda_handler(event, context):
         if not bucket or not key:
             continue
 
-        full_text = extract_text_with_textract(bucket, key)
+        full_text = extract_text_from_pdf(bucket, key)
+        if not full_text or len(full_text.strip()) < 10:
+            continue  # Skip non-PDF or unreadable files
 
         candidate_profile = parse_candidate_profile(full_text)
 
@@ -89,28 +91,48 @@ def lambda_handler(event, context):
         candidate_profile["matches"] = matches
 
         # Persist candidate
+        # candidate_table.put_item(Item=candidate_profile)
+        # Convert all float values to Decimal recursively
+        candidate_profile = json.loads(
+            json.dumps(candidate_profile),
+            parse_float=Decimal
+        )
+
         candidate_table.put_item(Item=candidate_profile)
 
     return {"statusCode": 200, "body": json.dumps({"message": "Processed resumes"})}
 
 
-def extract_text_with_textract(bucket: str, key: str) -> str:
+def extract_text_from_pdf(bucket: str, key: str) -> str:
     """
-    Use Textract to extract raw text from a PDF in S3.
-    For simplicity, uses DetectDocumentText which is synchronous.
+    Download PDF from S3 and extract text using pypdf (free, no AWS Textract needed).
+    Works with text-based PDFs; scanned/image PDFs would need OCR (e.g. Textract).
     """
-    response = textract.detect_document_text(
-        Document={"S3Object": {"Bucket": bucket, "Name": key}}
-    )
+    if not key.lower().endswith(".pdf"):
+        return ""
 
-    lines: List[str] = []
-    for block in response.get("Blocks", []):
-        if block.get("BlockType") == "LINE":
-            text = block.get("Text")
+    local_path = f"/tmp/{os.path.basename(key)}"
+    try:
+        s3.download_file(bucket, key, local_path)
+    except Exception:
+        return ""
+
+    try:
+        reader = PdfReader(local_path)
+        lines: List[str] = []
+        for page in reader.pages:
+            text = page.extract_text()
             if text:
                 lines.append(text)
-
-    return "\n".join(lines)
+        return "\n".join(lines)
+    except Exception:
+        return ""
+    finally:
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except OSError:
+                pass
 
 
 def parse_candidate_profile(text: str) -> Dict:
