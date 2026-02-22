@@ -1,0 +1,32 @@
+{
+  "candidateId": "example-123",
+  "name": "Alex Johnson",
+  "email": "alex.johnson@example.com",
+  "total_experience_years": 5.0,
+  "skills": [
+    "python",
+    "aws",
+    "lambda",
+    "dynamodb",
+    "rest",
+    "api",
+    "docker",
+    "git"
+  ],
+  "titles": [
+    "senior backend engineer",
+    "software engineer"
+  ],
+  "raw_text": "Sample truncated resume text...",
+  "matches": [
+    {
+      "jobId": "backend-engineer-job-id",
+      "score": 0.6
+    },
+    {
+      "jobId": "devops-engineer-job-id",
+      "score": 0.3
+    }
+  ]
+}
+

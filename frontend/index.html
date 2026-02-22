@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI Resume Matcher - Recruiter Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>AI Resume Matcher</h1>
+      <p class="subtitle">Recruiter dashboard for parsed candidates and job matches</p>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Candidates</h2>
+        <div id="candidates-loading" class="loading">Loading candidates...</div>
+        <table id="candidates-table" class="table hidden">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Experience (years)</th>
+              <th>Top Match</th>
+            </tr>
+          </thead>
+          <tbody id="candidates-tbody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>Candidate Details</h2>
+        <div id="candidate-details" class="details">
+          <p>Select a candidate to view details.</p>
+        </div>
+        <button id="download-report-btn" class="button secondary" disabled>
+          Download Candidate Report
+        </button>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <small>
+        Backend powered by AWS (S3, SQS, Lambda, Textract, DynamoDB, API Gateway).
+      </small>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+  </html>
+

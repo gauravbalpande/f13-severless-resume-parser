@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AI-powered resume parser and job matcher
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+
+Resources:
+  ResumeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ResumeProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+
+  CandidatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: candidateId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: candidateId
+          KeyType: HASH
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+
+  EnqueueResumeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/enqueue_resume/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          RESUME_QUEUE_URL: !Ref ResumeProcessingQueue
+      Events:
+        ResumeUploadEvent:
+          Type: S3
+          Properties:
+            Bucket: !Ref ResumeBucket
+            Events: s3:ObjectCreated:*
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ResumeProcessingQueue.QueueName
+
+  ResumeProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/resume_processor/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          CANDIDATE_TABLE_NAME: !Ref CandidatesTable
+          JOB_TABLE_NAME: !Ref JobsTable
+          RESUME_BUCKET_NAME: !Ref ResumeBucket
+      Events:
+        ResumeQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ResumeProcessingQueue.Arn
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt ResumeProcessingQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CandidatesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - S3ReadPolicy:
+            BucketName: !Ref ResumeBucket
+        - Statement:
+            Effect: Allow
+            Action:
+              - textract:AnalyzeDocument
+              - textract:DetectDocumentText
+            Resource: "*"
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/api/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          CANDIDATE_TABLE_NAME: !Ref CandidatesTable
+          JOB_TABLE_NAME: !Ref JobsTable
+      Events:
+        ApiGateway:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CandidatesTable
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  ResumeBucketName:
+    Description: Name of the S3 bucket for resumes
+    Value: !Ref ResumeBucket
+
+  CandidatesTableName:
+    Description: Name of the DynamoDB candidates table
+    Value: !Ref CandidatesTable
+
+  JobsTableName:
+    Description: Name of the DynamoDB jobs table
+    Value: !Ref JobsTable
+
+  ResumeQueueUrl:
+    Description: URL of the SQS queue used for resume processing
+    Value: !Ref ResumeProcessingQueue
+
